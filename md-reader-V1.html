@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档阅读器 · taest-doc</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-light">
+<style>
+  :root {
+    --bg: #f7f6f2;
+    --sidebar-bg: #1e1e2e;
+    --sidebar-text: #cdd6f4;
+    --sidebar-muted: #6c7086;
+    --sidebar-hover: #313244;
+    --sidebar-active: #45475a;
+    --sidebar-accent: #cba6f7;
+    --content-bg: #ffffff;
+    --text: #1e1e2e;
+    --text-muted: #6c7086;
+    --border: #e8e6e0;
+    --code-bg: #f5f4ef;
+    --accent: #7c3aed;
+    --accent-light: #ede9fe;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-serif: 'Noto Serif SC', 'STSong', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 280px;
+    min-width: 200px;
+    max-width: 400px;
+    background: var(--sidebar-bg);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    position: relative;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  #sidebar-header {
+    padding: 20px 16px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  #sidebar-header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+  #sidebar-header p {
+    font-size: 11px;
+    color: var(--sidebar-muted);
+  }
+  #btn-group {
+    padding: 10px 16px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #open-btn, #reconnect-btn {
+    width: 100%;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+    font-family: var(--font-sans);
+    padding: 8px 12px;
+  }
+  #open-btn {
+    background: rgba(203,166,247,0.12);
+    border: 1px solid rgba(203,166,247,0.25);
+    color: var(--sidebar-accent);
+  }
+  #open-btn:hover { background: rgba(203,166,247,0.22); }
+  #reconnect-btn {
+    background: rgba(249,201,124,0.1);
+    border: 1px solid rgba(249,201,124,0.25);
+    color: #f9c97c;
+  }
+  #reconnect-btn:hover { background: rgba(249,201,124,0.2); }
+  #open-btn svg, #reconnect-btn svg { flex-shrink: 0; }
+
+  #file-tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #45475a transparent;
+  }
+  #file-tree::-webkit-scrollbar { width: 4px; }
+  #file-tree::-webkit-scrollbar-thumb { background: #45475a; border-radius: 2px; }
+
+  .tree-folder {
+    padding: 0;
+  }
+  .tree-folder-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px 7px 16px;
+    color: #e0d7f8;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    border-radius: 6px;
+    margin: 1px 6px;
+  }
+  .tree-folder-label:hover {
+    background: rgba(203,166,247,0.12);
+    color: #fff;
+  }
+  .tree-folder-label .folder-arrow {
+    transition: transform 0.2s;
+    color: rgba(203,166,247,0.5);
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .tree-folder.collapsed .folder-arrow { transform: rotate(-90deg); }
+  .tree-folder-label .folder-icon {
+    flex-shrink: 0;
+    color: #f9c97c;
+    filter: drop-shadow(0 1px 2px rgba(249,201,124,0.3));
+  }
+
+  .tree-children {
+    overflow: hidden;
+    transition: max-height 0.2s ease;
+  }
+  .tree-folder.collapsed .tree-children { max-height: 0 !important; }
+
+  .tree-file {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 16px 5px 28px;
+    color: #a6adc8;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    margin: 1px 6px;
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tree-file:hover { background: rgba(255,255,255,0.05); color: #cdd6f4; }
+  .tree-file.active {
+    background: rgba(203,166,247,0.15);
+    color: var(--sidebar-accent);
+  }
+  .tree-file .file-icon { flex-shrink: 0; color: #7f849c; }
+  .tree-file:hover .file-icon { color: #a6adc8; }
+  .tree-file.active .file-icon { color: var(--sidebar-accent); }
+  .tree-file span { overflow: hidden; text-overflow: ellipsis; }
+
+  /* Resize handle */
+  #resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    z-index: 10;
+  }
+  #resize-handle:hover, #resize-handle.dragging { background: rgba(203,166,247,0.3); }
+
+  /* ── Main ── */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  #topbar {
+    height: 52px;
+    background: var(--content-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  #breadcrumb {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #breadcrumb strong { color: var(--text); font-weight: 500; }
+  #theme-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    transition: all 0.15s;
+  }
+  #theme-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+
+  #content-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #d0cdc5 transparent;
+  }
+  #content-wrap::-webkit-scrollbar { width: 6px; }
+  #content-wrap::-webkit-scrollbar-thumb { background: #d0cdc5; border-radius: 3px; }
+
+  /* ── Drop zone ── */
+  #drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 400px;
+    gap: 16px;
+    color: var(--text-muted);
+  }
+  #drop-zone.drag-over { background: var(--accent-light); }
+  #drop-zone .drop-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: var(--accent-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #drop-zone h2 { font-size: 18px; font-weight: 500; color: var(--text); }
+  #drop-zone p { font-size: 14px; max-width: 360px; text-align: center; line-height: 1.6; }
+  #drop-zone .hint {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  #drop-zone .hint span {
+    font-size: 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 20px;
+    color: var(--text-muted);
+  }
+
+  /* ── Markdown ── */
+  #md-content {
+    display: none;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 48px 80px;
+  }
+  #md-content.visible { display: block; }
+
+  .md-body { font-family: var(--font-sans); line-height: 1.8; }
+  .md-body h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    color: var(--text);
+  }
+  .md-body h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 36px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .md-body h3 { font-size: 17px; font-weight: 600; margin: 24px 0 10px; color: var(--text); }
+  .md-body h4, .md-body h5, .md-body h6 { font-size: 15px; font-weight: 600; margin: 18px 0 8px; }
+  .md-body p { margin: 0 0 16px; color: var(--text); }
+  .md-body a { color: var(--accent); text-decoration: none; }
+  .md-body a:hover { text-decoration: underline; }
+  .md-body ul, .md-body ol { margin: 0 0 16px 24px; }
+  .md-body li { margin: 4px 0; }
+  .md-body li > ul, .md-body li > ol { margin-bottom: 4px; }
+  .md-body blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 8px 16px;
+    margin: 0 0 16px;
+    background: var(--accent-light);
+    border-radius: 0 6px 6px 0;
+    color: var(--text-muted);
+  }
+  .md-body code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: #7c3aed;
+    border: 1px solid var(--border);
+  }
+  .md-body pre {
+    background: #1e1e2e;
+    border-radius: 10px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 0 0 20px;
+    position: relative;
+  }
+  .md-body pre code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: none;
+    color: #cdd6f4;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    line-height: 1.6;
+  }
+  .md-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 20px;
+    font-size: 14px;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .md-body th {
+    background: var(--code-bg);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .md-body td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .md-body tr:last-child td { border-bottom: none; }
+  .md-body tr:hover td { background: #fafaf8; }
+  .md-body img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+  .md-body hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  /* ── Dark mode ── */
+  body.dark {
+    --bg: #11111b;
+    --content-bg: #1e1e2e;
+    --text: #cdd6f4;
+    --text-muted: #6c7086;
+    --border: #313244;
+    --code-bg: #181825;
+    --accent: #cba6f7;
+    --accent-light: #2a2040;
+    --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  body.dark .md-body tr:hover td { background: #252535; }
+  body.dark #hljs-light { display: none; }
+
+  /* Copy button on code blocks */
+  .code-wrap { position: relative; }
+  .copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #cdd6f4;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.2); }
+
+  /* TOC */
+  #toc-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    padding: 40px 0 80px 0;
+    overflow-y: auto;
+    display: none;
+    border-left: 1px solid var(--border);
+    background: var(--content-bg);
+  }
+  #toc-sidebar.visible { display: block; }
+  #toc-sidebar h3 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 20px 12px;
+  }
+  .toc-item {
+    display: block;
+    padding: 4px 20px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.12s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+  .toc-item:hover { color: var(--text); }
+  .toc-item.active { color: var(--accent); border-left-color: var(--accent); }
+  .toc-item.h2 { padding-left: 20px; }
+  .toc-item.h3 { padding-left: 32px; font-size: 12px; }
+  .toc-item.h4 { padding-left: 44px; font-size: 12px; }
+
+  #article-wrap {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #d0cdc5 transparent;
+  }
+  #article-wrap::-webkit-scrollbar { width: 6px; }
+  #article-wrap::-webkit-scrollbar-thumb { background: #d0cdc5; border-radius: 3px; }
+
+  .content-inner { display: flex; height: 100%; }
+
+  @media (max-width: 900px) {
+    #toc-sidebar { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <h1>📚 taest-doc</h1>
+    <p id="folder-name">本地文档阅读器</p>
+  </div>
+  <div id="btn-group">
+    <button id="open-btn" onclick="pickFolder()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      打开文件夹
+    </button>
+    <button id="reconnect-btn" onclick="reconnectFolder()" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      重新连接上次文件夹
+    </button>
+  </div>
+  <input type="file" id="folder-input" webkitdirectory multiple accept=".md" style="display:none">
+  <div id="file-tree"></div>
+  <div id="resize-handle"></div>
+</aside>
+
+<div id="main">
+  <div id="topbar">
+    <div id="breadcrumb">选择左侧文件开始阅读</div>
+    <button id="theme-btn" onclick="toggleTheme()">🌙 深色</button>
+  </div>
+  <div class="content-inner" style="flex:1;overflow:hidden;display:flex;">
+    <div id="article-wrap">
+      <div id="drop-zone">
+        <div class="drop-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </div>
+        <h2>拖拽文件夹到这里</h2>
+        <p>将你的 Markdown 文档文件夹拖拽进来，或点击左上角「打开文件夹」授权目录——下次打开页面可直接一键重连，无需重新选择</p>
+        <div class="hint">
+          <span>支持 .md 文件</span>
+          <span>自动解析目录结构</span>
+          <span>代码高亮</span>
+          <span>自动生成目录</span>
+        </div>
+      </div>
+      <div id="md-content">
+        <div class="md-body" id="md-body"></div>
+      </div>
+    </div>
+    <div id="toc-sidebar">
+      <h3>目录</h3>
+      <div id="toc-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let rootDirHandle = null;   // FileSystemDirectoryHandle (FSA)
+let fileHandleMap = {};     // path -> FileSystemFileHandle (FSA) or File (legacy)
+let activeFilePath = null;
+let isDark = false;
+const FSA_SUPPORTED = ('showDirectoryPicker' in window);
+const IDB_KEY = 'taest-doc-dir-handle';
+
+// ── IndexedDB helpers (persist FileSystemDirectoryHandle across sessions) ──
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open('taest-doc', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = rej;
+  });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(val, key);
+    tx.oncomplete = res; tx.onerror = rej;
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get(key);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = rej;
+  });
+}
+
+// ── Init: check for saved handle ──
+window.addEventListener('load', async () => {
+  // Restore theme
+  if (localStorage.getItem('taest-theme') === 'dark') toggleTheme();
+
+  if (!FSA_SUPPORTED) {
+    // Fallback: legacy input
+    document.getElementById('folder-input').addEventListener('change', e => {
+      loadLegacyFiles(Array.from(e.target.files));
+    });
+    return;
+  }
+  // Check if we have a saved handle
+  try {
+    const saved = await idbGet(IDB_KEY);
+    if (saved) {
+      const perm = await saved.queryPermission({ mode: 'read' });
+      document.getElementById('reconnect-btn').style.display = 'flex';
+      document.getElementById('reconnect-btn').title = saved.name;
+      // Auto-reconnect if permission already granted
+      if (perm === 'granted') {
+        await loadFromHandle(saved);
+      } else {
+        // Show folder name hint
+        document.getElementById('folder-name').textContent = '上次: ' + saved.name;
+      }
+    }
+  } catch(e) { /* no saved handle */ }
+});
+
+// ── Pick folder via FSA ──
+async function pickFolder() {
+  if (!FSA_SUPPORTED) {
+    document.getElementById('folder-input').click();
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    await idbSet(IDB_KEY, handle);
+    document.getElementById('reconnect-btn').style.display = 'flex';
+    document.getElementById('reconnect-btn').title = handle.name;
+    await loadFromHandle(handle);
+  } catch(e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// ── Reconnect saved folder ──
+async function reconnectFolder() {
+  try {
+    const saved = await idbGet(IDB_KEY);
+    if (!saved) return;
+    const perm = await saved.requestPermission({ mode: 'read' });
+    if (perm === 'granted') await loadFromHandle(saved);
+  } catch(e) { console.error(e); }
+}
+
+// ── Load from FileSystemDirectoryHandle ──
+async function loadFromHandle(dirHandle) {
+  rootDirHandle = dirHandle;
+  fileHandleMap = {};
+  document.getElementById('folder-name').textContent = dirHandle.name;
+  const entries = [];
+  await collectFSAEntries(dirHandle, '', entries);
+  if (!entries.length) return;
+  buildTreeFromFSA(entries);
+  hideDropZone();
+}
+
+async function collectFSAEntries(dirHandle, pathPrefix, entries) {
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file' && name.endsWith('.md')) {
+      const path = pathPrefix + name;
+      fileHandleMap[path] = handle;
+      entries.push(path);
+    } else if (handle.kind === 'directory') {
+      await collectFSAEntries(handle, pathPrefix + name + '/', entries);
+    }
+  }
+}
+
+// ── Legacy fallback (Firefox / older browsers) ──
+function loadLegacyFiles(files) {
+  const mdFiles = files.filter(f => f.name.endsWith('.md'));
+  if (!mdFiles.length) return;
+  fileHandleMap = {};
+  mdFiles.forEach(f => { fileHandleMap[f.webkitRelativePath || f.name] = f; });
+  buildTreeFromPaths(Object.keys(fileHandleMap));
+  hideDropZone();
+}
+
+// ── Drag & drop (works for both FSA and legacy) ──
+const dropZone = document.getElementById('drop-zone');
+document.body.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+document.body.addEventListener('dragleave', e => { if (!e.relatedTarget || !document.body.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
+document.body.addEventListener('drop', async e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  // Try FSA directory handle first
+  if (FSA_SUPPORTED && e.dataTransfer.items.length) {
+    for (const item of e.dataTransfer.items) {
+      if (item.kind === 'file') {
+        try {
+          const handle = await item.getAsFileSystemHandle();
+          if (handle && handle.kind === 'directory') {
+            await idbSet(IDB_KEY, handle);
+            document.getElementById('reconnect-btn').style.display = 'flex';
+            await loadFromHandle(handle);
+            return;
+          }
+        } catch(e) {}
+      }
+    }
+  }
+  // Fallback: read via webkitGetAsEntry
+  const files = [];
+  for (const item of Array.from(e.dataTransfer.items)) {
+    if (item.kind === 'file') {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) await readLegacyEntry(entry, files);
+    }
+  }
+  if (files.length) loadLegacyFiles(files);
+});
+
+async function readLegacyEntry(entry, files, path = '') {
+  if (entry.isFile) {
+    await new Promise(res => entry.file(f => {
+      Object.defineProperty(f, 'webkitRelativePath', { value: path + f.name });
+      files.push(f); res();
+    }));
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    let batch;
+    do {
+      batch = await new Promise(res => reader.readEntries(res));
+      for (const e of batch) await readLegacyEntry(e, files, path + entry.name + '/');
+    } while (batch.length > 0);
+  }
+}
+
+function hideDropZone() {
+  document.getElementById('drop-zone').style.display = 'none';
+}
+
+// ── Build tree from FSA paths ──
+function buildTreeFromFSA(paths) {
+  buildTreeFromPaths(paths);
+}
+
+// ── Build tree from path list ──
+function buildTreeFromPaths(paths) {
+  const tree = {};
+  paths.forEach(p => {
+    const parts = p.split('/');
+    let node = tree;
+    parts.forEach((part, i) => {
+      if (i === parts.length - 1) {
+        node.__files = node.__files || [];
+        node.__files.push(p);
+      } else {
+        node[part] = node[part] || {};
+        node = node[part];
+      }
+    });
+  });
+  const container = document.getElementById('file-tree');
+  container.innerHTML = '';
+  renderTree(tree, container, 0);
+}
+
+function renderTree(node, container, depth) {
+  const folders = Object.keys(node).filter(k => k !== '__files').sort((a,b) => a.localeCompare(b,'zh'));
+  const files = node.__files || [];
+
+  if (depth === 0 && folders.length === 1 && files.length === 0) {
+    renderTree(node[folders[0]], container, 0);
+    return;
+  }
+
+  folders.forEach(folder => {
+    const folderEl = document.createElement('div');
+    folderEl.className = 'tree-folder';
+    const label = document.createElement('div');
+    label.className = 'tree-folder-label';
+    label.innerHTML = `
+      <svg class="folder-icon" width="17" height="17" viewBox="0 0 24 24" fill="#f9c97c" stroke="#e8a83a" stroke-width="1.2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span>${folder}</span>
+      <svg class="folder-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+    label.addEventListener('click', () => {
+      folderEl.classList.toggle('collapsed');
+      folderEl.querySelector('.tree-children').style.maxHeight =
+        folderEl.classList.contains('collapsed') ? '0' : '9999px';
+    });
+    folderEl.appendChild(label);
+    const children = document.createElement('div');
+    children.className = 'tree-children';
+    children.style.maxHeight = '9999px';
+    renderTree(node[folder], children, depth + 1);
+    folderEl.appendChild(children);
+    container.appendChild(folderEl);
+  });
+
+  files.sort((a, b) => a.localeCompare(b, 'zh')).forEach(filePath => {
+    const item = document.createElement('div');
+    item.className = 'tree-file';
+    item.style.paddingLeft = (16 + depth * 12) + 'px';
+    const name = filePath.split('/').pop().replace(/\.md$/, '');
+    item.innerHTML = `
+      <svg class="file-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="12" y1="17" x2="8" y2="17"/>
+      </svg>
+      <span title="${name}">${name}</span>`;
+    item.addEventListener('click', () => openFilePath(filePath, item));
+    container.appendChild(item);
+  });
+}
+
+// ── Open file by path ──
+async function openFilePath(filePath, el) {
+  document.querySelectorAll('.tree-file').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  activeFilePath = filePath;
+
+  const parts = filePath.split('/');
+  const folder = parts.length > 1 ? parts[parts.length - 2] : '';
+  const name = parts[parts.length - 1].replace(/\.md$/, '');
+  const bc = document.getElementById('breadcrumb');
+  bc.innerHTML = folder
+    ? `${folder} <span style="opacity:0.4">›</span> <strong>${name}</strong>`
+    : `<strong>${name}</strong>`;
+
+  const handle = fileHandleMap[filePath];
+  if (!handle) return;
+
+  let text;
+  try {
+    // FSA FileSystemFileHandle
+    if (typeof handle.getFile === 'function') {
+      const file = await handle.getFile();
+      text = await file.text();
+    } else {
+      // Legacy File object
+      text = await handle.text();
+    }
+  } catch(e) {
+    bc.innerHTML = `<span style="color:#f38ba8">读取失败，请重新授权文件夹权限</span>`;
+    return;
+  }
+  renderMd(text);
+}
+
+// ── Render Markdown ──
+function renderMd(text) {
+  const body = document.getElementById('md-body');
+  body.innerHTML = marked.parse(text, { breaks: true, gfm: true });
+
+  body.querySelectorAll('pre').forEach(pre => {
+    if (pre.parentElement.classList.contains('code-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'code-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '复制';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(pre.textContent).then(() => {
+        btn.textContent = '已复制 ✓';
+        setTimeout(() => btn.textContent = '复制', 1500);
+      });
+    });
+    wrap.appendChild(btn);
+  });
+
+  body.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+  document.getElementById('md-content').classList.add('visible');
+  buildTOC(body);
+  document.getElementById('article-wrap').scrollTop = 0;
+}
+
+// ── TOC ──
+function buildTOC(body) {
+  const headings = Array.from(body.querySelectorAll('h1,h2,h3,h4'));
+  const tocList = document.getElementById('toc-list');
+  const tocSidebar = document.getElementById('toc-sidebar');
+  tocList.innerHTML = '';
+
+  if (headings.length < 2) { tocSidebar.classList.remove('visible'); return; }
+
+  headings.forEach((h, i) => {
+    h.id = 'heading-' + i;
+    const item = document.createElement('div');
+    item.className = 'toc-item ' + h.tagName.toLowerCase();
+    item.textContent = h.textContent;
+    item.addEventListener('click', () => h.scrollIntoView({ behavior: 'smooth' }));
+    tocList.appendChild(item);
+  });
+
+  tocSidebar.classList.add('visible');
+
+  const articleWrap = document.getElementById('article-wrap');
+  articleWrap.onscroll = () => {
+    const tops = headings.map(h => h.getBoundingClientRect().top);
+    let active = 0;
+    tops.forEach((t, i) => { if (t < 120) active = i; });
+    tocList.querySelectorAll('.toc-item').forEach((el, i) => el.classList.toggle('active', i === active));
+  };
+}
+
+// ── Dark mode ──
+function toggleTheme() {
+  isDark = !isDark;
+  document.body.classList.toggle('dark', isDark);
+  document.getElementById('theme-btn').textContent = isDark ? '☀️ 浅色' : '🌙 深色';
+  document.getElementById('hljs-light').disabled = isDark;
+  localStorage.setItem('taest-theme', isDark ? 'dark' : 'light');
+}
+
+// ── Sidebar resize ──
+const handle = document.getElementById('resize-handle');
+const sidebar = document.getElementById('sidebar');
+let resizing = false, startX, startW;
+handle.addEventListener('mousedown', e => {
+  resizing = true; startX = e.clientX; startW = sidebar.offsetWidth;
+  handle.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+});
+document.addEventListener('mousemove', e => {
+  if (!resizing) return;
+  const w = Math.min(400, Math.max(160, startW + e.clientX - startX));
+  sidebar.style.width = w + 'px';
+});
+document.addEventListener('mouseup', () => {
+  resizing = false;
+  handle.classList.remove('dragging');
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+});
+
+// ── marked config ──
+marked.setOptions({ breaks: true, gfm: true });
+</script>
+</body>
+</html>
